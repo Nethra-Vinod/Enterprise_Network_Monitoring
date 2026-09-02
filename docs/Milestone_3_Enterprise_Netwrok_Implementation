@@ -1,0 +1,360 @@
+````markdown
+**# Milestone 3 – Enterprise Network Implementation and Verification**
+**\*\*Project:\*\*** Enterprise Network Monitoring and Security Analysis Dashboard using Cisco Packet Tracer, Wireshark, and Python
+**\*\*Date:\*\*** 25 August 2026
+**\*\*Status:\*\*** Completed
+
+**# Objective**
+The objective of this milestone was to implement the planned enterprise network in Cisco Packet Tracer and verify its functionality.
+The implementation included VLAN segmentation, inter-VLAN routing, DHCP, DNS, application services, ACL-based security, WAN connectivity, NAT/PAT, and end-to-end network verification.
+The completed network will serve as the traffic-generation environment for the subsequent Wireshark and TShark packet analysis phase.
+
+**# Enterprise Network Architecture**
+The enterprise network was implemented for **\*\*TechNova Solutions Pvt. Ltd.\*\*** using a multilayer switching architecture.
+The network consists of:
+\* Core Layer 3 switch (**\*\*Core-SW1\*\***)
+\* Departmental access switches
+\* HR PCs
+\* Sales PCs
+\* IT PCs
+\* Infrastructure Server
+\* Application Server
+\* Edge Router (**\*\*R1\*\***)
+\* Simulated ISP network
+The Core-SW1 provides inter-VLAN routing, while R1 provides connectivity between the internal enterprise network and the simulated external network.
+
+**# VLAN Configuration**
+The following VLAN structure was implemented:
+| VLAN ID | VLAN Name | Network | Default Gateway |
+| -------- | --------- | ------- | --------------- |
+| 10 | HR | 192.168.10.0/24 | 192.168.10.1 |
+| 20 | SALES | 192.168.20.0/24 | 192.168.20.1 |
+| 30 | IT | 192.168.30.0/24 | 192.168.30.1 |
+| 40 | SERVER | 192.168.40.0/24 | 192.168.40.1 |
+| 99 | MANAGEMENT | 192.168.99.0/24 | 192.168.99.1 |
+
+### VLAN Purpose
+\* **\*\*VLAN 10 – HR:\*\*** Used for HR department devices.
+\* **\*\*VLAN 20 – SALES:\*\*** Used for Sales department devices.
+\* **\*\*VLAN 30 – IT:\*\*** Used for IT department devices.
+\* **\*\*VLAN 40 – SERVER:\*\*** Used for infrastructure and application servers.
+\* **\*\*VLAN 99 – MANAGEMENT:\*\*** Reserved for network management.
+
+**# Access and Trunk Configuration**
+Departmental end devices were assigned to their respective access VLANs.
+\* HR PCs → VLAN 10
+\* Sales PCs → VLAN 20
+\* IT PCs → VLAN 30
+\* Servers → VLAN 40
+Trunk links were configured between the departmental switches and Core-SW1.
+The following VLANs were allowed across the required trunk links:
+```text
+10,20,30,40,99
+````
+Trunk configuration was verified using:
+```text
+show interfaces trunk
+```
+The required VLANs were successfully shown as active and forwarding.
+
+**# Inter-VLAN Routing**
+Core-SW1 was configured as the Layer 3 switch responsible for routing between the internal VLANs.
+The following SVI gateways were configured:
+```text
+VLAN 10 → 192.168.10.1
+VLAN 20 → 192.168.20.1
+VLAN 30 → 192.168.30.1
+VLAN 40 → 192.168.40.1
+VLAN 99 → 192.168.99.1
+```
+Inter-VLAN connectivity was tested from the departmental PCs.
+The tests confirmed that authorized communication between VLANs was functioning correctly.
+
+**# DHCP Configuration**
+Centralized DHCP was implemented using the Infrastructure Server.
+
+****Infrastructure Server IP:**** `192.168.40.10`
+DHCP relay was configured on the required VLAN interfaces using:
+```text
+ip helper-address 192.168.40.10
+```
+The following departmental DHCP networks were configured:
+| Department | Network         | Gateway      |
+| ---------- | --------------- | ------------ |
+| HR         | 192.168.10.0/24 | 192.168.10.1 |
+| Sales      | 192.168.20.0/24 | 192.168.20.1 |
+| IT         | 192.168.30.0/24 | 192.168.30.1 |
+
+### DHCP Verification
+All departmental PCs successfully received IP addresses through DHCP.
+* HR – 4 PCs → `192.168.10.x`
+* Sales – 6 PCs → `192.168.20.x`
+* IT – 5 PCs → `192.168.30.x`
+The clients also received the correct subnet mask, default gateway, and DNS server.
+
+**# DNS Configuration**
+DNS service was configured on the Infrastructure Server.
+The Application Server was assigned the hostname:
+```text
+app.company.local
+```
+The corresponding IP address was:
+```text
+192.168.40.20
+```
+DNS resolution was verified using:
+```text
+ping app.company.local
+```
+The hostname successfully resolved to `192.168.40.20` and ICMP replies were received.
+****DNS Verification:****  PASS
+
+**# Application Server Configuration**
+The Application Server was configured with:
+| Parameter       | Value             |
+| --------------- | ----------------- |
+| IP Address      | 192.168.40.20     |
+| Subnet Mask     | 255.255.255.0     |
+| Default Gateway | 192.168.40.1      |
+| Hostname        | app.company.local |
+
+The following services were enabled and tested:
+* HTTP/Web
+* FTP
+* Email
+
+**# HTTP/Web Service**
+The HTTP service was enabled on the Application Server.
+The service was tested using:
+```text
+http://app.company.local
+```
+The webpage successfully loaded from the client.
+
+****HTTP Verification:**** ✅ PASS
+
+**# FTP Service**
+FTP service was enabled on the Application Server.
+The service was tested using:
+```text
+ftp 192.168.40.20
+```
+The following operations were successfully completed:
+* FTP connection established.
+* Username and password authentication completed.
+* User successfully logged in.
+* FTP directory listing successfully retrieved using `dir`.
+
+****FTP Verification:****  PASS
+
+**# Email Service**
+The Packet Tracer email service was configured and tested between departmental clients.
+A test email was successfully:
+* Sent from a departmental client.
+* Delivered through the configured mail server.
+* Retrieved by the receiving client.
+****Email Verification:****  PASS
+
+**# Network Security and ACL Configuration**
+Access Control Lists were implemented on Core-SW1 to control communication between departments.
+Two main security policies were configured:
+
+### HR Policy
+HR was prevented from accessing the Sales network.
+```text
+HR → Sales = BLOCKED
+```
+HR was allowed to communicate with authorized networks such as IT and the Server VLAN.
+
+### Sales Policy
+Sales was prevented from accessing the HR network.
+```text
+Sales → HR = BLOCKED
+```
+Sales was allowed to communicate with authorized networks such as IT and the Server VLAN.
+
+**# DHCP and ACL Issue**
+During initial testing, DHCP failed for the HR and Sales PCs even though the DHCP server and relay configuration were functioning correctly.
+The issue was identified as an ACL-related problem.
+DHCP clients initially use:
+```text
+Source: 0.0.0.0
+Destination: 255.255.255.255
+```
+Therefore, the DHCP traffic did not match the normal subnet-based permit rules.
+An explicit DHCP permit was added to the ACL:
+```text
+permit udp any eq 68 any eq 67
+```
+After this change:
+* HR DHCP → Successful
+* Sales DHCP → Successful
+* HR-to-Sales restriction → Maintained
+* Sales-to-HR restriction → Maintained
+This resolved the DHCP issue without compromising the intended security policies.
+
+**# WAN Configuration**
+R1 was configured as the enterprise edge router.
+
+| Interface            | IP Address    | Purpose             |
+| -------------------- | ------------- | ------------------- |
+| GigabitEthernet0/0/0 | 203.0.113.2   | WAN/ISP             |
+| GigabitEthernet0/0/1 | 192.168.254.2 | Core-SW1 connection |
+
+Core-SW1 was configured with:
+```text
+192.168.254.1
+```
+for the router-facing connection.
+The simulated ISP was configured with:
+```text
+203.0.113.1
+198.51.100.1
+```
+The Core-SW1-to-R1 and R1-to-ISP connections were successfully verified.
+
+**# Static Routing**
+Static routes were configured on R1 to provide return paths to the internal VLAN networks.
+The internal networks were routed through Core-SW1:
+```text
+192.168.10.0/24 → 192.168.254.1
+192.168.20.0/24 → 192.168.254.1
+192.168.30.0/24 → 192.168.254.1
+192.168.40.0/24 → 192.168.254.1
+192.168.99.0/24 → 192.168.254.1
+```
+During initial testing, WAN connectivity from internal clients was unsuccessful because the required return routes were missing.
+The routes were subsequently configured and WAN connectivity was restored.
+
+**# NAT/PAT Configuration**
+NAT overload was configured on R1 to allow internal private IP addresses to communicate with the simulated external network.
+The internal interface was configured as:
+```text
+ip nat inside
+```
+The WAN interface was configured as:
+```text
+ip nat outside
+```
+NAT overload was configured using the WAN interface address.
+This allows multiple internal devices to share the router's external IP address when accessing the simulated external network.
+
+**# End-to-End Connectivity Verification**
+The completed network was tested across all departments.
+
+### HR PCs
+All 4 HR PCs:
+* Successfully received `192.168.10.x` addresses.
+* Successfully reached the HR gateway `192.168.10.1`.
+* Successfully reached the IT network.
+* Were correctly blocked from accessing the Sales network.
+
+### Sales PCs
+All 6 Sales PCs:
+* Successfully received `192.168.20.x` addresses.
+* Successfully reached the Sales gateway `192.168.20.1`.
+* Successfully reached the IT network.
+* Were correctly blocked from accessing the HR network.
+
+### IT PCs
+All 5 IT PCs:
+* Successfully received `192.168.30.x` addresses.
+* Successfully reached the IT gateway `192.168.30.1`.
+* Successfully reached HR.
+* Successfully reached Sales.
+
+**# Application Service Verification**
+| Service | Verification                   | Result |
+| ------- | ------------------------------ | ------ |
+| DHCP    | Dynamic IP assignment          | PASS   |
+| DNS     | `app.company.local` resolution | PASS   |
+| HTTP    | Webpage access                 | PASS   |
+| FTP     | Login and directory listing    | PASS   |
+| Email   | Send and receive test          | PASS   |
+
+**# WAN Verification**
+WAN connectivity was tested from the enterprise network.
+The following destinations were successfully verified:
+```text
+192.168.254.2
+203.0.113.1
+198.51.100.1
+```
+The final communication path was:
+```text
+  Enterprise PC
+      ↓
+ Department VLAN
+      ↓
+  Core-SW1
+      ↓
+      R1
+      ↓
+   NAT/PAT
+      ↓
+     ISP
+      ↓
+Simulated External Network
+```
+****WAN Verification:**** PASS
+
+**# Final Verification Summary**
+| Component                 | Status |
+| ------------------------- | ------ |
+| VLAN segmentation         | PASS   |
+| Access port configuration | PASS   |
+| Trunk configuration       | PASS   |
+| Inter-VLAN routing        | PASS   |
+| DHCP                      | PASS   |
+| DHCP relay                | PASS   |
+| DNS                       | PASS   |
+| HTTP                      | PASS   |
+| FTP                       | PASS   |
+| Email                     | PASS   |
+| HR ACL                    | PASS   |
+| Sales ACL                 | PASS   |
+| Router connectivity       | PASS   |
+| Static routing            | PASS   |
+| NAT/PAT                   | PASS   |
+| ISP connectivity          | PASS   |
+| 15 client verification    | PASS   |
+
+**# Issues Encountered and Resolutions**
+### Issue 1 – DHCP Failure
+**Problem:** HR and Sales PCs initially failed to obtain IP addresses.
+**Cause:** ACL rules were blocking DHCP traffic.
+**Solution:** Added an explicit DHCP permit rule:
+```text
+permit udp any eq 68 any eq 67
+```
+**Result:** DHCP successfully assigned addresses to all departmental PCs.
+
+### Issue 2 – WAN Connectivity Failure
+**Problem:** Internal clients could access internal services but initially could not reach the simulated WAN.
+**Cause:** R1 did not have the required routes to the internal VLAN networks.
+**Solution:** Added static routes on R1 through Core-SW1.
+**Result:** End-to-end WAN connectivity was successfully established.
+
+**# Deliverables**
+* Completed Cisco Packet Tracer enterprise topology.
+* Configured VLANs and trunk links.
+* Configured inter-VLAN routing.
+* Configured centralized DHCP and DHCP relay.
+* Configured DNS.
+* Configured HTTP, FTP, and email services.
+* Configured ACL-based security policies.
+* Configured R1 and simulated ISP connectivity.
+* Configured static routing.
+* Configured NAT/PAT.
+* Completed network and service verification.
+* Captured configuration and verification evidence.
+
+**# Outcome**
+The planned enterprise network was successfully implemented and validated in Cisco Packet Tracer.
+The network now provides departmental segmentation, centralized network services, controlled inter-department communication, application services, and simulated WAN connectivity.
+All 15 departmental PCs were successfully verified, and the configured security policies operated as intended.
+The completed Packet Tracer network is now ready to generate realistic network traffic for the next stage of the project involving **Wireshark/TShark packet capture, protocol analysis, performance analysis, security analysis, and Python dashboard integration**.
+
+**# Milestone Status**
+Milestone 3 – Enterprise Network Implementation and Verification: Completed
+
