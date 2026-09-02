@@ -11,7 +11,6 @@ import time
 import sys
 import os
 import importlib.util
-from src.analysis.live_monitor import LiveMonitor
 
 wireshark_path = r"C:\Program Files\Wireshark"
 if wireshark_path not in os.environ.get("PATH", ""):
@@ -40,6 +39,11 @@ st.set_page_config(
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ANALYSIS_DIR = PROJECT_ROOT / "src" / "analysis"
 UNIFIED_FILE = ANALYSIS_DIR / "unified_analysis.py"
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.analysis.live_monitor import LiveMonitor
 
 
 def load_unified_analysis():
@@ -234,12 +238,18 @@ section[data-testid="stSidebar"] > div {{
 }}
 
 div[data-testid="stRadio"] label {{
-    font-size:.150rem !important;
+    font-size:.75rem !important;
     line-height:1.25 !important;
     color:#24332D !important;
     opacity:1 !important;
     font-weight:600 !important;
     padding:.28rem .2rem !important;
+}}
+
+div[data-testid="stRadio"] label[data-baseweb="radio"] p {{
+    color:#24332D !important;
+    font-size:.75rem !important;
+    line-height:1.25 !important;
 }}
 
 div[data-testid="stRadio"] label:hover {{
@@ -255,6 +265,11 @@ div[data-baseweb="select"] > div {{
     border-color:#DDE5E1 !important;
     border-radius:9px !important;
     background:#FFFFFF !important;
+}}
+
+div[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+div[data-testid="stSelectbox"] [data-baseweb="select"] input {{
+    color:#24332D !important;
 }}
 
 [data-testid="stCaptionContainer"] p {{
