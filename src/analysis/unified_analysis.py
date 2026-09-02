@@ -28,6 +28,9 @@ DNS_PCAP = CAPTURE_DIR / "dns_test.pcapng"
 def _require_tshark() -> str:
     exe = shutil.which("tshark")
     if not exe:
+        win_path = r"C:\Program Files\Wireshark\tshark.exe"
+        if os.path.exists(win_path):
+            return win_path
         raise RuntimeError(
             "TShark was not found in PATH. Install Wireshark with TShark "
             "and verify that `tshark -v` works in Command Prompt."

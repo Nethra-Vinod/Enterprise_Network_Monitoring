@@ -1,7 +1,8 @@
 import subprocess
 import time
 import threading
-from collections import Counter
+from collections import Counter, defaultdict
+from datetime import datetime
 
 INTERFACE = "5"
 DISPLAY_FILTER = "ip or arp"
@@ -55,6 +56,8 @@ def new_stats():
         "icmp_matched_replies": 0, "icmp_rtts": [],
         "arp_requests": 0, "arp_replies": [],
         "icmp_pending": {}, "dns_pending": {},
+        "traffic_per_second": defaultdict(int),
+        "last_packets": [],
     }
 
 
@@ -97,6 +100,20 @@ def process_packet_line(line, stats):
 
     stats["total_packets"] += 1
     stats["total_bytes"] += safe_int(frame_length, 0)
+
+    start_t = stats["start_time"]
+    second_idx = max(0, int(packet_time - start_t))
+    stats["traffic_per_second"][second_idx] += 1
+
+    stats["last_packets"].append({
+        "Time": datetime.fromtimestamp(packet_time).strftime("%H:%M:%S.%f")[:-3],
+        "Source": ip_src or "-",
+        "Destination": ip_dst or "-",
+        "Protocol": protocol or "OTHER",
+        "Bytes": safe_int(frame_length, 0),
+    })
+    stats["last_packets"] = stats["last_packets"][-25:]
+
     if protocol:
         stats["protocols"][protocol] += 1
 
@@ -194,6 +211,10 @@ def calculate_snapshot(stats):
         "arp_requests": stats["arp_requests"],
         "arp_replies": stats["arp_replies"],
         "health_score": health, "health_status": status,
+        "traffic": [stats["traffic_per_second"][i] for i in range(max(stats["traffic_per_second"].keys(), default=-1) + 1)],
+        "last_packets": list(stats["last_packets"]),
+        "icmp_rtts": list(stats["icmp_rtts"]),
+        "dns_rtts": list(stats["dns_rtts"]),
     }
 
 

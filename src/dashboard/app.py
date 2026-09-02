@@ -9,7 +9,13 @@ import csv
 import io
 import time
 import sys
+import os
 import importlib.util
+from src.analysis.live_monitor import LiveMonitor
+
+wireshark_path = r"C:\Program Files\Wireshark"
+if wireshark_path not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + wireshark_path
 
 # ============================================================
 # TECHNOVA SOLUTIONS — ENTERPRISE NETWORK MONITOR
@@ -142,6 +148,7 @@ st.markdown(
 
 html, body, [class*="css"] {{
     font-family: Inter, sans-serif;
+    font-size: 100%;
 }}
 
 .stApp {{
@@ -227,7 +234,7 @@ section[data-testid="stSidebar"] > div {{
 }}
 
 div[data-testid="stRadio"] label {{
-    font-size:.84rem !important;
+    font-size:.150rem !important;
     line-height:1.25 !important;
     color:#24332D !important;
     opacity:1 !important;
@@ -423,14 +430,14 @@ div[data-baseweb="select"] > div {{
 
 .panel-title {{
     color:{TEXT};
-    font-size:.78rem;
+    font-size:.9rem;
     font-weight:800;
     margin-bottom:.15rem;
 }}
 
 .panel-sub {{
     color:#99A59F;
-    font-size:.62rem;
+    font-size:.72rem;
     margin-bottom:.65rem;
 }}
 
@@ -459,18 +466,18 @@ div[data-baseweb="select"] > div {{
 
 .event-title {{
     color:#34413B;
-    font-size:.68rem;
+    font-size:.78rem;
     font-weight:700;
 }}
 
 .event-sub {{
     color:#98A49F;
-    font-size:.6rem;
+    font-size:.69rem;
     margin-top:2px;
 }}
 
 .badge {{
-    font-size:.54rem;
+    font-size:.62rem;
     font-weight:800;
     border-radius:999px;
     padding:.25rem .42rem;
@@ -635,277 +642,21 @@ def get_interfaces():
         return [(5, "Wi-Fi")]
 
 
+def get_live_monitor():
+    if "live_monitor_instance" not in st.session_state:
+        interface = st.session_state.get("live_interface", 5)
+        monitor = LiveMonitor(interface=interface)
+        monitor.start()
+        st.session_state.live_monitor_instance = monitor
+    return st.session_state.live_monitor_instance
+
 def reset_live_state():
-    st.session_state.live_packets = 0
-    st.session_state.live_bytes = 0
-    st.session_state.live_started = time.time()
-    st.session_state.live_protocols = Counter()
-    st.session_state.live_per_second = defaultdict(int)
-    st.session_state.live_rtts = []
-    st.session_state.live_pending_icmp = {}
-    st.session_state.live_retrans = 0
-    st.session_state.live_dup_ack = 0
-    st.session_state.live_ooo = 0
-    st.session_state.live_rst = 0
-    st.session_state.live_dns_queries = 0
-    st.session_state.live_dns_responses = 0
-    st.session_state.live_dns_failed = 0
-    st.session_state.live_dns_success = 0
-    st.session_state.live_arp_req = 0
-    st.session_state.live_arp_reply = 0
-    st.session_state.live_last_packets = []
-
-
-def capture_live_chunk(interface_number, seconds=2):
-    fields = [
-        "frame.time_epoch",
-        "frame.len",
-        "_ws.col.Protocol",
-        "ip.src",
-        "ip.dst",
-        "icmp.type",
-        "icmp.seq",
-        "icmp.ident",
-        "tcp.analysis.retransmission",
-        "tcp.analysis.duplicate_ack",
-        "tcp.analysis.out_of_order",
-        "tcp.flags.reset",
-        "dns.id",
-        "dns.flags.response",
-        "dns.flags.rcode",
-        "arp.opcode",
-    ]
-
-    cmd = [
-        "tshark",
-        "-i", str(interface_number),
-        "-a", f"duration:{seconds}",
-        "-T", "fields",
-        "-E", "separator=\t",
-        "-E", "quote=n",
-        "-E", "occurrence=f",
-    ]
-
-    for field in fields:
-        cmd.extend(["-e", field])
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=seconds + 8,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise RuntimeError(
-            exc.stderr.strip() or "TShark live capture failed."
-        ) from exc
-    except FileNotFoundError as exc:
-        raise RuntimeError("TShark was not found in PATH.") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("TShark live capture timed out.") from exc
-
-    return list(csv.reader(io.StringIO(result.stdout), delimiter="\t"))
-
-
-def process_live_rows(rows):
-    start = st.session_state.live_started or time.time()
-
-    for row in rows:
-        if not row:
-            continue
-
-        while len(row) < 16:
-            row.append("")
-
-        (
-            epoch,
-            length,
-            protocol,
-            src,
-            dst,
-            icmp_type,
-            icmp_seq,
-            icmp_ident,
-            retrans,
-            dup_ack,
-            ooo,
-            rst,
-            dns_id,
-            dns_response,
-            dns_rcode,
-            arp_opcode,
-        ) = row[:16]
-
-        try:
-            packet_time = float(epoch)
-            packet_len = int(length)
-        except (ValueError, TypeError):
-            continue
-
-        st.session_state.live_packets += 1
-        st.session_state.live_bytes += packet_len
-
-        protocol = protocol.strip() or "OTHER"
-        st.session_state.live_protocols[protocol] += 1
-
-        second = max(0, int(packet_time - start))
-        st.session_state.live_per_second[second] += 1
-
-        st.session_state.live_last_packets.append(
-            {
-                "Time": datetime.fromtimestamp(packet_time).strftime(
-                    "%H:%M:%S.%f"
-                )[:-3],
-                "Source": src or "-",
-                "Destination": dst or "-",
-                "Protocol": protocol,
-                "Bytes": packet_len,
-            }
-        )
-        st.session_state.live_last_packets = (
-            st.session_state.live_last_packets[-25:]
-        )
-
-        if retrans:
-            st.session_state.live_retrans += 1
-
-        if dup_ack:
-            st.session_state.live_dup_ack += 1
-
-        if ooo:
-            st.session_state.live_ooo += 1
-
-        if rst == "1":
-            st.session_state.live_rst += 1
-
-        if icmp_type == "8" and icmp_seq:
-            key = (src, dst, icmp_seq, icmp_ident)
-            st.session_state.live_pending_icmp[key] = packet_time
-
-        elif icmp_type == "0" and icmp_seq:
-            key = (dst, src, icmp_seq, icmp_ident)
-            request_time = st.session_state.live_pending_icmp.pop(
-                key,
-                None,
-            )
-
-            if request_time is not None:
-                rtt = (packet_time - request_time) * 1000
-                if rtt >= 0:
-                    st.session_state.live_rtts.append(rtt)
-
-        if dns_id:
-            if dns_response.lower() == "true":
-                st.session_state.live_dns_responses += 1
-
-                if dns_rcode == "0":
-                    st.session_state.live_dns_success += 1
-                else:
-                    st.session_state.live_dns_failed += 1
-            else:
-                st.session_state.live_dns_queries += 1
-
-        if arp_opcode == "1":
-            st.session_state.live_arp_req += 1
-
-        elif arp_opcode == "2":
-            st.session_state.live_arp_reply += 1
-
+    if "live_monitor_instance" in st.session_state:
+        st.session_state.live_monitor_instance.stop()
+        del st.session_state["live_monitor_instance"]
 
 def live_snapshot():
-    started = st.session_state.live_started or time.time()
-    elapsed = max(time.time() - started, 0.001)
-
-    packets = st.session_state.live_packets
-    total_bytes = st.session_state.live_bytes
-    rtts = list(st.session_state.live_rtts)
-
-    dns_responses = st.session_state.live_dns_responses
-    dns_success = st.session_state.live_dns_success
-
-    dns_success_rate = (
-        dns_success / dns_responses * 100
-        if dns_responses
-        else None
-    )
-
-    # Pending ICMP requests are not immediately called lost.
-    # They may still receive a reply in a later live capture chunk.
-    loss = 0.0
-
-    if st.session_state.live_pending_icmp:
-        matched = len(rtts)
-        pending = len(st.session_state.live_pending_icmp)
-        total_requests = matched + pending
-
-        if total_requests:
-            loss = pending / total_requests * 100
-
-    return {
-        "packets": packets,
-        "bytes": total_bytes,
-        "elapsed": elapsed,
-        "throughput": total_bytes * 8 / elapsed,
-        "packet_rate": packets / elapsed,
-        "protocols": dict(
-            st.session_state.live_protocols.most_common()
-        ),
-        "rtts": rtts,
-        "min_rtt": min(rtts) if rtts else None,
-        "avg_rtt": sum(rtts) / len(rtts) if rtts else None,
-        "max_rtt": max(rtts) if rtts else None,
-        "loss": loss,
-        "retrans": st.session_state.live_retrans,
-        "dup_ack": st.session_state.live_dup_ack,
-        "ooo": st.session_state.live_ooo,
-        "rst": st.session_state.live_rst,
-        "dns_queries": st.session_state.live_dns_queries,
-        "dns_responses": dns_responses,
-        "dns_failed": st.session_state.live_dns_failed,
-        "dns_success": dns_success_rate,
-        "arp_req": st.session_state.live_arp_req,
-        "arp_reply": st.session_state.live_arp_reply,
-        "traffic": [
-            st.session_state.live_per_second[i]
-            for i in range(
-                max(st.session_state.live_per_second.keys(), default=-1) + 1
-            )
-        ],
-        "last_packets": list(st.session_state.live_last_packets),
-    }
-
-
-def live_health(live):
-    score = 100
-
-    if live["loss"] > 0:
-        score -= min(live["loss"] * 0.5, 20)
-
-    if live["avg_rtt"] is not None:
-        if live["avg_rtt"] > 100:
-            score -= 10
-        elif live["avg_rtt"] > 50:
-            score -= 5
-
-    score -= min(live["retrans"], 10)
-
-    if live["dup_ack"] > 5:
-        score -= 3
-
-    if live["ooo"] > 5:
-        score -= 3
-
-    if live["rst"] > 5:
-        score -= 5
-
-    if live["dns_success"] is not None and live["dns_success"] < 90:
-        score -= 10
-
-    return max(0, min(100, int(score)))
+    return get_live_monitor().snapshot()
 
 
 # ============================================================
@@ -1090,76 +841,60 @@ if st.session_state.mode == "Offline Analysis":
 
 else:
 
-    if st.session_state.live_started is None:
-        reset_live_state()
-
-    try:
-        rows = capture_live_chunk(
-            st.session_state.live_interface,
-            seconds=2,
-        )
-        process_live_rows(rows)
-    except Exception as exc:
-        st.error(f"Live capture error: {exc}")
-        st.info(
-            "Make sure TShark/Npcap is installed and the selected "
-            "interface can be captured."
-        )
-        st.stop()
-
     LIVE = live_snapshot()
 
     I = {
-        "requests": 0,
-        "replies": len(LIVE["rtts"]),
-        "loss": LIVE["loss"],
-        "rtts": LIVE["rtts"],
-        "avg_rtt": LIVE["avg_rtt"] or 0.0,
-        "min_rtt": LIVE["min_rtt"] or 0.0,
-        "max_rtt": LIVE["max_rtt"] or 0.0,
+        "requests": LIVE.get("icmp_requests", 0),
+        "replies": LIVE.get("icmp_replies", 0),
+        "loss": LIVE.get("packet_loss", 0),
+        "rtts": LIVE.get("icmp_rtts", []),
+        "avg_rtt": LIVE.get("avg_icmp_rtt", 0.0),
+        "min_rtt": LIVE.get("min_icmp_rtt", 0.0),
+        "max_rtt": LIVE.get("max_icmp_rtt", 0.0),
     }
 
     T = {
-        "total": 0,
-        "retransmissions": LIVE["retrans"],
-        "duplicate_acks": LIVE["dup_ack"],
-        "out_of_order": LIVE["ooo"],
-        "rst": LIVE["rst"],
+        "total": LIVE.get("total_packets", 0),
+        "retransmissions": LIVE.get("tcp_retransmissions", 0),
+        "duplicate_acks": LIVE.get("tcp_duplicate_acks", 0),
+        "out_of_order": LIVE.get("tcp_out_of_order", 0),
+        "rst": LIVE.get("tcp_rst", 0),
     }
 
     D = {
-        "queries": LIVE["dns_queries"],
-        "responses": LIVE["dns_responses"],
-        "successful": st.session_state.live_dns_success,
-        "failed": LIVE["dns_failed"],
-        "success_rate": LIVE["dns_success"] or 0.0,
-        "rtts": [],
-        "avg_rtt": 0.0,
-        "min_rtt": 0.0,
-        "max_rtt": 0.0,
+        "queries": LIVE.get("dns_queries", 0),
+        "responses": LIVE.get("dns_responses", 0),
+        "successful": LIVE.get("dns_success", 0),
+        "failed": LIVE.get("dns_failed", 0),
+        "success_rate": LIVE.get("dns_success_rate", 0.0),
+        "rtts": LIVE.get("dns_rtts", []),
+        "avg_rtt": LIVE.get("avg_dns_rtt", 0.0),
+        "min_rtt": LIVE.get("min_dns_rtt", 0.0),
+        "max_rtt": LIVE.get("max_dns_rtt", 0.0),
     }
 
     A = {
-        "requests": LIVE["arp_req"],
-        "replies": LIVE["arp_reply"],
+        "requests": LIVE.get("arp_requests", 0),
+        "replies": LIVE.get("arp_replies", 0),
         "broadcasts": 0,
     }
 
     TH = {
-        "packets": LIVE["packets"],
-        "bytes": LIVE["bytes"],
-        "duration": LIVE["elapsed"],
-        "packet_rate": LIVE["packet_rate"],
-        "throughput": LIVE["throughput"],
-        "traffic": LIVE["traffic"],
+        "packets": LIVE.get("total_packets", 0),
+        "bytes": LIVE.get("total_bytes", 0),
+        "duration": LIVE.get("elapsed", 0.0),
+        "packet_rate": LIVE.get("packet_rate", 0.0),
+        "throughput": LIVE.get("throughput_bps", 0),
+        "traffic": LIVE.get("traffic", []),
+        "last_packets": LIVE.get("last_packets", []),
     }
 
-    PROTOCOLS = LIVE["protocols"]
-    RTT_VALUES = LIVE["rtts"]
-    TRAFFIC = LIVE["traffic"]
+    PROTOCOLS = LIVE.get("protocols", {})
+    RTT_VALUES = LIVE.get("icmp_rtts", [])
+    TRAFFIC = LIVE.get("traffic", [])
 
-    HEALTH = live_health(LIVE)
-    STATUS = status_for_health(HEALTH)
+    HEALTH = LIVE.get("health_score", 100)
+    STATUS = LIVE.get("health_status", "GOOD")
 
 
 # ============================================================
@@ -1259,8 +994,6 @@ if st.session_state.module == "Dashboard":
     left, right = st.columns([1, 1.5], gap="medium")
 
     with left:
-        st.markdown('<div class="health">', unsafe_allow_html=True)
-
         badge_color = (
             GREEN
             if HEALTH >= 75
@@ -1269,26 +1002,49 @@ if st.session_state.module == "Dashboard":
             else RED
         )
 
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=HEALTH,
+            title={'text': "Network Health", 'font': {'size': 20, 'color': TEXT}},
+            number={'font': {'size': 42, 'color': badge_color}},
+            gauge={
+                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': LINE},
+                'bar': {'color': badge_color},
+                'bgcolor': "white",
+                'borderwidth': 2,
+                'bordercolor': LINE,
+                'steps': [
+                    {'range': [0, 60], 'color': "#FFEBEE"},
+                    {'range': [60, 75], 'color': "#FFF3E0"},
+                    {'range': [75, 100], 'color': "#E8F5E9"}
+                ],
+                'threshold': {
+                    'line': {'color': badge_color, 'width': 4},
+                    'thickness': 0.75,
+                    'value': HEALTH
+                }
+            }
+        ))
+        
+        base_layout(fig, height=250, margin=dict(l=20, r=20, t=50, b=20))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
         st.markdown(
             f"""
-            <div class="health-label">Network Health Score</div>
-            <div class="health-value">
-                {HEALTH:.0f}
-                <span style="font-size:1rem;color:#8A9891;"> /100</span>
-            </div>
-            <div class="health-badge"
-                 style="color:{badge_color};background:{badge_color}18;">
-                {STATUS}
-            </div>
-            <div class="health-text">
-                Combined project score based on ICMP latency and loss,
-                TCP reliability, DNS performance and traffic indicators.
+            <div class="health" style="min-height: auto; padding: 1rem;">
+                <div class="health-label">Status Overview</div>
+                <div class="health-badge"
+                     style="color:{badge_color};background:{badge_color}18; font-size: 0.7rem;">
+                    {STATUS}
+                </div>
+                <div class="health-text">
+                    Combined project score based on ICMP latency and loss,
+                    TCP reliability, DNS performance and traffic indicators.
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
         st.markdown('<div class="panel">', unsafe_allow_html=True)
@@ -2025,14 +1781,14 @@ elif st.session_state.module == "Live Traffic":
             (
                 "●",
                 "Packets",
-                f"{live['packets']:,}",
+                f"{live.get('total_packets', 0):,}",
                 "Session total",
                 TEAL,
             ),
             (
                 "↗",
                 "Throughput",
-                format_kbps(live["throughput"]),
+                format_kbps(live.get("throughput_bps", 0)),
                 "Current session rate",
                 GREEN,
             ),
@@ -2040,8 +1796,8 @@ elif st.session_state.module == "Live Traffic":
                 "◷",
                 "RTT",
                 (
-                    f"{live['avg_rtt']:.2f} ms"
-                    if live["avg_rtt"] is not None
+                    f"{live.get('avg_icmp_rtt', 0.0):.2f} ms"
+                    if live.get("avg_icmp_rtt") is not None
                     else "N/A"
                 ),
                 "Matched ICMP",
@@ -2050,14 +1806,14 @@ elif st.session_state.module == "Live Traffic":
             (
                 "!",
                 "Retransmissions",
-                live["retrans"],
+                live.get("tcp_retransmissions", 0),
                 "TCP",
                 AMBER,
             ),
             (
                 "⌁",
                 "ARP Requests",
-                live["arp_req"],
+                live.get("arp_requests", 0),
                 "ARP",
                 TEAL,
             ),
