@@ -11,6 +11,7 @@ import time
 import sys
 import os
 import importlib.util
+from PIL import Image
 
 wireshark_path = r"C:\Program Files\Wireshark"
 if wireshark_path not in os.environ.get("PATH", ""):
@@ -596,6 +597,14 @@ def base_layout(fig, height=315, margin=None):
         paper_bgcolor="white",
         plot_bgcolor="white",
         font=dict(color="#0B3D2E"),
+        xaxis=dict(
+            tickfont=dict(color="#0B3D2E"),
+            title_font=dict(color="#0B3D2E"),
+        ),
+        yaxis=dict(
+            tickfont=dict(color="#0B3D2E"),
+            title_font=dict(color="#0B3D2E"),
+        ),
     )
     return fig
 
@@ -658,7 +667,8 @@ def get_interfaces():
 
 
 def get_live_monitor():
-    if "live_monitor_instance" not in st.session_state:
+    monitor = st.session_state.get("live_monitor_instance")
+    if monitor is None or not monitor.running:
         interface = st.session_state.get("live_interface", 5)
         monitor = LiveMonitor(interface=interface)
         monitor.start()
@@ -712,8 +722,10 @@ with st.sidebar:
     if mode != st.session_state.mode:
         st.session_state.mode = mode
 
+        reset_live_state()
+
         if mode == "Live Monitoring":
-            reset_live_state()
+            get_live_monitor()
 
         st.rerun()
 
@@ -910,6 +922,17 @@ else:
 
     HEALTH = LIVE.get("health_score", 100)
     STATUS = LIVE.get("health_status", "GOOD")
+
+
+if st.session_state.mode == "Live Monitoring":
+
+    if hasattr(st, "fragment"):
+
+        @st.fragment(run_every="1s")
+        def refresh_live_monitor():
+            st.rerun()
+
+        refresh_live_monitor()
 
 
 # ============================================================
@@ -1288,6 +1311,7 @@ elif st.session_state.module == "Protocol Analysis":
                     marker_color=TEAL,
                     text=values,
                     textposition="outside",
+                    textfont=dict(color="#18332D"),
                 )
             )
 
@@ -1301,7 +1325,10 @@ elif st.session_state.module == "Protocol Analysis":
             fig.update_xaxes(
                 title="Packets",
                 gridcolor="#EDF0EE",
+                title_font=dict(color="#18332D"),
+                tickfont=dict(color="#18332D"),
             )
+            fig.update_yaxes(tickfont=dict(color="#18332D"))
 
             fig.update_layout(showlegend=False)
 
@@ -1430,7 +1457,11 @@ elif st.session_state.module == "Performance":
         else:
 
             fig.add_annotation(
-                text="No matched ICMP RTT data",
+                text=(
+                    "Waiting for live traffic..."
+                    if st.session_state.mode == "Live Monitoring"
+                    else "No matched ICMP RTT data"
+                ),
                 x=.5,
                 y=.5,
                 xref="paper",
@@ -1458,6 +1489,9 @@ elif st.session_state.module == "Performance":
             "Traffic Volume",
             "Packets captured each second",
         )
+
+        if st.session_state.mode == "Live Monitoring" and not TRAFFIC:
+            st.info("Waiting for live traffic...")
 
         fig = go.Figure(
             go.Bar(
@@ -1973,7 +2007,7 @@ elif st.session_state.module == "Live Traffic":
 # NETWORK TOPOLOGY
 # ============================================================
 
-elif st.session_state.module == "Network Topology":
+elif st.session_state.module == "Network Topology" and False:
 
     section(
         "Network Topology",
@@ -2211,6 +2245,99 @@ elif st.session_state.module == "Network Topology":
                 """,
                 unsafe_allow_html=True,
             )
+
+
+# ============================================================
+# NETWORK TOPOLOGY (PACKET TRACER VIEW)
+# ============================================================
+
+elif st.session_state.module == "Network Topology":
+
+    section(
+        "Network Topology",
+        "Cisco Packet Tracer enterprise design — logical topology and VLAN structure",
+    )
+
+    topology_image = PROJECT_ROOT / "packet_tracer" / "Enterprise_Network_Topology.png"
+
+    if topology_image.exists():
+        with topology_image.open("rb") as image_file:
+            topology_image_data = Image.open(image_file).convert("RGB")
+            st.image(
+                topology_image_data,
+                use_column_width=True,
+                caption="Cisco Packet Tracer enterprise topology",
+            )
+    else:
+        st.warning(
+            "Packet Tracer screenshot not found. Add it as "
+            f"{topology_image.name} in the packet_tracer folder."
+        )
+
+    st.write("")
+
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+
+    panel(
+        "VLAN and IP Information",
+        "Addressing and department allocation from the Packet Tracer design",
+    )
+
+    vlan_rows = [
+        {
+            "VLAN ID": 10,
+            "VLAN Name": "HR",
+            "Network": "192.168.10.0/24",
+            "Default Gateway": "192.168.10.1",
+            "Department/Devices": "4 HR PCs",
+        },
+        {
+            "VLAN ID": 20,
+            "VLAN Name": "SALES",
+            "Network": "192.168.20.0/24",
+            "Default Gateway": "192.168.20.1",
+            "Department/Devices": "6 Sales PCs",
+        },
+        {
+            "VLAN ID": 30,
+            "VLAN Name": "IT",
+            "Network": "192.168.30.0/24",
+            "Default Gateway": "192.168.30.1",
+            "Department/Devices": "5 IT PCs",
+        },
+        {
+            "VLAN ID": 40,
+            "VLAN Name": "SERVER",
+            "Network": "192.168.40.0/24",
+            "Default Gateway": "192.168.40.1",
+            "Department/Devices": "Infra + App Server",
+        },
+        {
+            "VLAN ID": 99,
+            "VLAN Name": "MANAGEMENT",
+            "Network": "192.168.99.0/24",
+            "Default Gateway": "192.168.99.1",
+            "Department/Devices": "Management",
+        },
+    ]
+
+    st.dataframe(vlan_rows, use_container_width=True, hide_index=True)
+
+    st.markdown("**Important Device IPs**")
+
+    device_rows = [
+        {"Device": "Infra Server", "IP Address": "192.168.40.10", "Role": "DHCP, DNS"},
+        {"Device": "App Server", "IP Address": "192.168.40.20", "Role": "HTTP, FTP, Email"},
+        {"Device": "R1 WAN", "IP Address": "203.0.113.2", "Role": ""},
+        {"Device": "R1 Core connection", "IP Address": "192.168.254.2", "Role": ""},
+        {"Device": "Core-SW1 R1-facing IP", "IP Address": "192.168.254.1", "Role": ""},
+        {"Device": "ISP", "IP Address": "203.0.113.1", "Role": ""},
+        {"Device": "ISP External", "IP Address": "198.51.100.1", "Role": ""},
+    ]
+
+    st.dataframe(device_rows, use_container_width=True, hide_index=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ============================================================

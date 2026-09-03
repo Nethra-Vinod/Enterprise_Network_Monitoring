@@ -54,7 +54,7 @@ def new_stats():
         "dns_failed": 0, "dns_rtts": [],
         "icmp_requests": 0, "icmp_replies": 0,
         "icmp_matched_replies": 0, "icmp_rtts": [],
-        "arp_requests": 0, "arp_replies": [],
+        "arp_requests": 0, "arp_replies": 0,
         "icmp_pending": {}, "dns_pending": {},
         "traffic_per_second": defaultdict(int),
         "last_packets": [],
