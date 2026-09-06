@@ -824,9 +824,9 @@ with st.sidebar:
         """
         <div class="summary-item">
             <div class="summary-label">PACKET ENGINE</div>
-            <div class="summary-value">TShark 4.x</div>
+            <div class="summary-value">Scapy PCAPNG</div>
             <div class="summary-label" style="margin-top:4px;">
-                Wireshark compatible • Python analysis
+                Same offline engine locally and in Cloud
             </div>
         </div>
         """,
@@ -2272,7 +2272,7 @@ elif st.session_state.module == "Network Topology":
             topology_image_data = Image.open(image_file).convert("RGB")
             st.image(
                 topology_image_data,
-                width="stretch",
+                use_container_width=True,
                 caption="Cisco Packet Tracer enterprise topology",
             )
     else:

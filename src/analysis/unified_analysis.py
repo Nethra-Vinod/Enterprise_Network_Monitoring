@@ -25,6 +25,7 @@ CAPTURE_DIR = PROJECT_ROOT / "captures" / "raw"
 TCP_PCAP = CAPTURE_DIR / "tcp_test.pcapng"
 ICMP_PCAP = CAPTURE_DIR / "icmp_test.pcapng"
 DNS_PCAP = CAPTURE_DIR / "dns_test.pcapng"
+USE_TSHARK_OFFLINE = os.getenv("TECHNOVA_USE_TSHARK_OFFLINE") == "1"
 
 
 def _require_tshark() -> str:
@@ -47,8 +48,10 @@ def _read_packets(pcap_file: Path) -> list:
 
 
 def _has_tshark() -> bool:
-    return shutil.which("tshark") is not None or os.path.isfile(
+    return USE_TSHARK_OFFLINE and (
+        shutil.which("tshark") is not None or os.path.isfile(
         r"C:\Program Files\Wireshark\tshark.exe"
+        )
     )
 
 
