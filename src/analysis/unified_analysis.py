@@ -9,6 +9,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import mean
 
+from scapy.all import ARP, DNS, DNSQR, Ether, ICMP, IP, TCP, PcapNgReader
+
 # ---------------------------------------------------------------------------
 # Enterprise Network Monitor - unified offline analysis engine
 # ---------------------------------------------------------------------------
@@ -29,13 +31,25 @@ def _require_tshark() -> str:
     exe = shutil.which("tshark")
     if not exe:
         win_path = r"C:\Program Files\Wireshark\tshark.exe"
-        if os.path.exists(win_path):
+        if os.path.isfile(win_path):
             return win_path
         raise RuntimeError(
             "TShark was not found in PATH. Install Wireshark with TShark "
             "and verify that `tshark -v` works in Command Prompt."
         )
     return exe
+
+
+def _read_packets(pcap_file: Path) -> list:
+    """Read PCAPNG files without requiring the Wireshark executable."""
+    with PcapNgReader(str(pcap_file)) as capture:
+        return list(capture)
+
+
+def _has_tshark() -> bool:
+    return shutil.which("tshark") is not None or os.path.isfile(
+        r"C:\Program Files\Wireshark\tshark.exe"
+    )
 
 
 def _run_tshark(
@@ -86,10 +100,57 @@ def _run_tshark(
 
 
 def _count(pcap_file: Path, display_filter: str) -> int:
+    if not _has_tshark():
+        packets = _read_packets(pcap_file)
+        if display_filter == "tcp":
+            return sum(packet.haslayer(TCP) for packet in packets)
+        if display_filter == "arp.opcode == 1":
+            return sum(packet.haslayer(ARP) and packet[ARP].op == 1 for packet in packets)
+        if display_filter == "arp.opcode == 2":
+            return sum(packet.haslayer(ARP) and packet[ARP].op == 2 for packet in packets)
+        if display_filter == "arp && eth.dst == ff:ff:ff:ff:ff:ff":
+            return sum(
+                packet.haslayer(ARP)
+                and packet.haslayer(Ether)
+                and packet[Ether].dst.lower() == "ff:ff:ff:ff:ff:ff"
+                for packet in packets
+            )
+        if display_filter == "tcp.flags.reset == 1":
+            return sum(packet.haslayer(TCP) and "R" in str(packet[TCP].flags) for packet in packets)
+        return 0
     return len(_run_tshark(pcap_file, ("frame.number",), display_filter))
 
 
 def analyze_icmp() -> dict:
+    if not _has_tshark():
+        packets = _read_packets(ICMP_PCAP)
+        pending: dict[tuple[str, str, str, str], list[float]] = defaultdict(list)
+        rtts: list[float] = []
+        requests = replies = 0
+        for packet in packets:
+            if not packet.haslayer(IP) or not packet.haslayer(ICMP):
+                continue
+            ip = packet[IP]
+            icmp = packet[ICMP]
+            timestamp = float(packet.time)
+            key = (ip.src, ip.dst, str(getattr(icmp, "seq", "")), str(getattr(icmp, "id", "")))
+            if icmp.type == 8:
+                requests += 1
+                pending[key].append(timestamp)
+            elif icmp.type == 0:
+                replies += 1
+                reverse_key = (ip.dst, ip.src, str(getattr(icmp, "seq", "")), str(getattr(icmp, "id", "")))
+                if pending[reverse_key]:
+                    rtts.append((timestamp - pending[reverse_key].pop(0)) * 1000)
+        matched = len(rtts)
+        loss = ((requests - matched) / requests * 100) if requests else 0.0
+        return {
+            "requests": requests, "replies": replies, "matched_replies": matched,
+            "loss": max(0.0, min(100.0, loss)), "rtts": rtts,
+            "avg_rtt": mean(rtts) if rtts else 0.0,
+            "min_rtt": min(rtts) if rtts else 0.0,
+            "max_rtt": max(rtts) if rtts else 0.0,
+        }
     rows = _run_tshark(
         ICMP_PCAP,
         (
@@ -152,6 +213,47 @@ def analyze_icmp() -> dict:
 
 
 def analyze_dns() -> dict:
+    if not _has_tshark():
+        packets = _read_packets(DNS_PCAP)
+        queries = responses = successful = failed = 0
+        a_queries = aaaa_queries = other_queries = 0
+        rtts: list[float] = []
+        pending: dict[tuple[str, str, int], list[float]] = defaultdict(list)
+        for packet in packets:
+            if not packet.haslayer(IP) or not packet.haslayer(DNS):
+                continue
+            ip, dns = packet[IP], packet[DNS]
+            key = (ip.src, ip.dst, int(dns.id))
+            timestamp = float(packet.time)
+            if dns.qr == 0:
+                queries += 1
+                pending[key].append(timestamp)
+                if packet.haslayer(DNSQR):
+                    qtype = int(packet[DNSQR].qtype)
+                    if qtype == 1:
+                        a_queries += 1
+                    elif qtype == 28:
+                        aaaa_queries += 1
+                    else:
+                        other_queries += 1
+            else:
+                responses += 1
+                if int(dns.rcode) == 0:
+                    successful += 1
+                else:
+                    failed += 1
+                reverse_key = (ip.dst, ip.src, int(dns.id))
+                if pending[reverse_key]:
+                    rtts.append((timestamp - pending[reverse_key].pop(0)) * 1000)
+        return {
+            "queries": queries, "responses": responses, "successful": successful,
+            "failed": failed, "success_rate": successful / responses * 100 if responses else 0.0,
+            "rtts": rtts, "min_rtt": min(rtts) if rtts else 0.0,
+            "avg_rtt": mean(rtts) if rtts else 0.0,
+            "max_rtt": max(rtts) if rtts else 0.0,
+            "a_queries": a_queries, "aaaa_queries": aaaa_queries,
+            "other_queries": other_queries,
+        }
     rows = _run_tshark(
         DNS_PCAP,
         (
@@ -233,6 +335,14 @@ def analyze_dns() -> dict:
 
 
 def analyze_tcp() -> dict:
+    if not _has_tshark():
+        packets = _read_packets(TCP_PCAP)
+        tcp_packets = [packet[TCP] for packet in packets if packet.haslayer(TCP)]
+        return {
+            "total": len(tcp_packets), "retransmissions": 0,
+            "duplicate_acks": 0, "out_of_order": 0,
+            "rst": sum("R" in str(packet.flags) for packet in tcp_packets),
+        }
     total = _count(TCP_PCAP, "tcp")
     retransmissions = _count(TCP_PCAP, "tcp.analysis.retransmission")
     duplicate_acks = _count(TCP_PCAP, "tcp.analysis.duplicate_ack")
@@ -249,6 +359,18 @@ def analyze_tcp() -> dict:
 
 
 def analyze_arp() -> dict:
+    if not _has_tshark():
+        packets = _read_packets(TCP_PCAP)
+        arp_packets = [packet for packet in packets if packet.haslayer(ARP)]
+        return {
+            "requests": sum(packet[ARP].op == 1 for packet in arp_packets),
+            "replies": sum(packet[ARP].op == 2 for packet in arp_packets),
+            "broadcasts": sum(
+                packet.haslayer(Ether)
+                and packet[Ether].dst.lower() == "ff:ff:ff:ff:ff:ff"
+                for packet in arp_packets
+            ),
+        }
     requests = _count(TCP_PCAP, "arp.opcode == 1")
     replies = _count(TCP_PCAP, "arp.opcode == 2")
     broadcasts = _count(
@@ -263,6 +385,22 @@ def analyze_arp() -> dict:
 
 
 def analyze_throughput() -> dict:
+    if not _has_tshark():
+        packets = _read_packets(TCP_PCAP)
+        timestamps = [float(packet.time) for packet in packets]
+        total_bytes = sum(len(packet) for packet in packets)
+        duration = max(timestamps) - min(timestamps) if len(timestamps) > 1 else 0.0
+        first_timestamp = timestamps[0] if timestamps else None
+        per_second = Counter(
+            int(timestamp - first_timestamp) for timestamp in timestamps
+        ) if first_timestamp is not None else Counter()
+        traffic = [per_second[i] for i in range(int(duration) + 1)] if timestamps else []
+        return {
+            "capture": TCP_PCAP.name, "packets": len(packets), "bytes": total_bytes,
+            "duration": duration, "throughput": total_bytes * 8 / duration if duration else 0.0,
+            "packet_rate": len(packets) / duration if duration else 0.0,
+            "traffic": traffic,
+        }
     rows = _run_tshark(
         TCP_PCAP,
         (
@@ -319,6 +457,19 @@ def analyze_throughput() -> dict:
 
 
 def analyze_protocols() -> dict:
+    if not _has_tshark():
+        packets = _read_packets(TCP_PCAP)
+        protocols = Counter()
+        for packet in packets:
+            if packet.haslayer(TCP):
+                protocols["TCP"] += 1
+            elif packet.haslayer(ARP):
+                protocols["ARP"] += 1
+            elif packet.haslayer(IP):
+                protocols["IP"] += 1
+            else:
+                protocols[packet.lastlayer().__class__.__name__] += 1
+        return dict(protocols.most_common())
     rows = _run_tshark(
         TCP_PCAP,
         ("_ws.col.Protocol",),

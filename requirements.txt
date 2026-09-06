@@ -3,3 +3,4 @@ plotly>=6,<7
 pandas>=2.2,<3
 pillow>=10,<13
 pyshark>=0.6,<1
+scapy>=2.5,<3
