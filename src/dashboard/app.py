@@ -242,15 +242,22 @@ div[data-testid="stRadio"] label {{
     font-size:.75rem !important;
     line-height:1.25 !important;
     color:#24332D !important;
+    -webkit-text-fill-color:#24332D !important;
     opacity:1 !important;
     font-weight:600 !important;
     padding:.28rem .2rem !important;
 }}
 
+div[data-testid="stRadio"] label span,
+div[data-testid="stRadio"] label p,
+div[data-testid="stRadio"] label [data-testid="stMarkdownContainer"],
+div[data-testid="stRadio"] label [data-testid="stMarkdownContainer"] p,
 div[data-testid="stRadio"] label[data-baseweb="radio"] p {{
     color:#24332D !important;
+    -webkit-text-fill-color:#24332D !important;
     font-size:.75rem !important;
     line-height:1.25 !important;
+    opacity:1 !important;
 }}
 
 div[data-testid="stRadio"] label:hover {{
