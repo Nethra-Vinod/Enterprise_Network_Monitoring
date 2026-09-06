@@ -1,6 +1,8 @@
 import subprocess
 import time
 import threading
+import shutil
+import os
 from collections import Counter, defaultdict
 from datetime import datetime
 
@@ -9,8 +11,18 @@ DISPLAY_FILTER = "ip or arp"
 
 
 def start_tshark(interface=INTERFACE, display_filter=DISPLAY_FILTER):
+    tshark = shutil.which("tshark")
+    if not tshark:
+        windows_tshark = r"C:\Program Files\Wireshark\tshark.exe"
+        if os.path.isfile(windows_tshark):
+            tshark = windows_tshark
+    if not tshark:
+        raise RuntimeError(
+            "Live monitoring requires TShark. Install Wireshark with TShark "
+            "or use Offline Analysis."
+        )
     command = [
-        "tshark", "-i", str(interface), "-l",
+        tshark, "-i", str(interface), "-l",
         "-T", "fields", "-E", "separator=|", "-E", "occurrence=f",
         "-e", "frame.time_epoch",
         "-e", "frame.len",
@@ -234,7 +246,12 @@ class LiveMonitor:
         if self.running:
             return
         self._stats = new_stats()
-        self.process = start_tshark(self.interface, self.display_filter)
+        try:
+            self.process = start_tshark(self.interface, self.display_filter)
+        except (OSError, RuntimeError):
+            self.process = None
+            self.running = False
+            return
         self.running = True
         self.thread = threading.Thread(
             target=self._reader_loop, daemon=True,
