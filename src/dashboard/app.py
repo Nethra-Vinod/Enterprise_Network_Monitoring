@@ -2272,7 +2272,7 @@ elif st.session_state.module == "Network Topology":
             topology_image_data = Image.open(image_file).convert("RGB")
             st.image(
                 topology_image_data,
-                use_column_width=True,
+                width="stretch",
                 caption="Cisco Packet Tracer enterprise topology",
             )
     else:

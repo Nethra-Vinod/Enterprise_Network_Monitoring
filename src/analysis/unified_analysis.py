@@ -338,9 +338,28 @@ def analyze_tcp() -> dict:
     if not _has_tshark():
         packets = _read_packets(TCP_PCAP)
         tcp_packets = [packet[TCP] for packet in packets if packet.haslayer(TCP)]
+        seen_sequences: set[tuple[str, str, int, int]] = set()
+        next_sequence: dict[tuple[str, str], int] = {}
+        retransmissions = duplicate_acks = out_of_order = 0
+        for packet in tcp_packets:
+            flow = (packet.underlayer.src, packet.underlayer.dst) if packet.underlayer else ("", "")
+            sequence_key = (flow[0], flow[1], int(packet.seq), int(packet.ack), int(packet.flags))
+            payload_length = len(bytes(packet.payload))
+            if sequence_key in seen_sequences and payload_length:
+                retransmissions += 1
+            seen_sequences.add(sequence_key)
+            if packet.flags == "A" and payload_length == 0:
+                reverse_flow = (flow[1], flow[0])
+                if reverse_flow in next_sequence and int(packet.ack) == next_sequence[reverse_flow]:
+                    duplicate_acks += 1
+            if payload_length:
+                expected = next_sequence.get(flow)
+                if expected is not None and int(packet.seq) > expected:
+                    out_of_order += 1
+                next_sequence[flow] = max(expected or 0, int(packet.seq) + payload_length)
         return {
-            "total": len(tcp_packets), "retransmissions": 0,
-            "duplicate_acks": 0, "out_of_order": 0,
+            "total": len(tcp_packets), "retransmissions": retransmissions,
+            "duplicate_acks": duplicate_acks, "out_of_order": out_of_order,
             "rst": sum("R" in str(packet.flags) for packet in tcp_packets),
         }
     total = _count(TCP_PCAP, "tcp")
