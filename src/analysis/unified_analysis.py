@@ -25,20 +25,25 @@ CAPTURE_DIR = PROJECT_ROOT / "captures" / "raw"
 TCP_PCAP = CAPTURE_DIR / "tcp_test.pcapng"
 ICMP_PCAP = CAPTURE_DIR / "icmp_test.pcapng"
 DNS_PCAP = CAPTURE_DIR / "dns_test.pcapng"
-USE_TSHARK_OFFLINE = os.getenv("TECHNOVA_USE_TSHARK_OFFLINE") == "1"
+USE_TSHARK_OFFLINE = os.getenv("TECHNOVA_USE_TSHARK_OFFLINE", "1") not in {"0", "false", "False"}
 
 
 def _require_tshark() -> str:
     exe = shutil.which("tshark")
-    if not exe:
-        win_path = r"C:\Program Files\Wireshark\tshark.exe"
+    if exe:
+        return exe
+
+    for win_path in (
+        r"C:\Program Files\Wireshark\tshark.exe",
+        r"C:\Program Files\Wireshark\shark.exe",
+    ):
         if os.path.isfile(win_path):
             return win_path
-        raise RuntimeError(
-            "TShark was not found in PATH. Install Wireshark with TShark "
-            "and verify that `tshark -v` works in Command Prompt."
-        )
-    return exe
+
+    raise RuntimeError(
+        "TShark was not found in PATH. Install Wireshark with TShark "
+        "and verify that `tshark -v` works in Command Prompt."
+    )
 
 
 def _read_packets(pcap_file: Path) -> list:
@@ -48,11 +53,12 @@ def _read_packets(pcap_file: Path) -> list:
 
 
 def _has_tshark() -> bool:
-    return USE_TSHARK_OFFLINE and (
-        shutil.which("tshark") is not None or os.path.isfile(
-        r"C:\Program Files\Wireshark\tshark.exe"
-        )
+    tshark_installed = (
+        shutil.which("tshark") is not None
+        or os.path.isfile(r"C:\Program Files\Wireshark\tshark.exe")
+        or os.path.isfile(r"C:\Program Files\Wireshark\shark.exe")
     )
+    return USE_TSHARK_OFFLINE and tshark_installed
 
 
 def _run_tshark(
@@ -485,11 +491,15 @@ def analyze_protocols() -> dict:
         for packet in packets:
             if packet.haslayer(TCP):
                 protocols["TCP"] += 1
-            elif packet.haslayer(ARP):
+            if packet.haslayer(UDP):
+                protocols["UDP"] += 1
+            if packet.haslayer(ARP):
                 protocols["ARP"] += 1
-            elif packet.haslayer(IP):
-                protocols["IP"] += 1
-            else:
+            if packet.haslayer(DNS):
+                protocols["DNS"] += 1
+            if packet.haslayer(ICMP):
+                protocols["ICMP"] += 1
+            if not any(packet.haslayer(layer) for layer in (TCP, UDP, ARP, DNS, ICMP)):
                 protocols[packet.lastlayer().__class__.__name__] += 1
         return dict(protocols.most_common())
     rows = _run_tshark(

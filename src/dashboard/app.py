@@ -104,7 +104,8 @@ BLUE = "#397A9C"
 TEXT = "#1D2824"
 MUTED = "#7B8782"
 LINE = "#E6EBE8"
-BG = "#F4F7F5"
+BG = "#0F1720"
+PANEL = "#F0F4F2"
 WHITE = "#FFFFFF"
 
 
@@ -157,7 +158,7 @@ html, body, [class*="css"] {{
 }}
 
 .stApp {{
-    background: {BG} !important;
+    background: linear-gradient(180deg, #0d1419 0%, #0b1218 100%) !important;
     color: {TEXT} !important;
     color-scheme: light !important;
 }}
@@ -176,13 +177,21 @@ header[data-testid="stHeader"] {{
     padding-bottom: 2rem;
     padding-left: 1.25rem;
     padding-right: 1.25rem;
+    background: {PANEL};
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 18px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.18);
 }}
 
 section[data-testid="stSidebar"] {{
-    background: #FBFCFB;
+    background: #F5F3EF;
     border-right: 1px solid {LINE};
     min-width: 255px !important;
     max-width: 255px !important;
+    border-radius: 18px 0 0 18px;
+    margin-left: 8px;
+    margin-top: 8px;
+    margin-bottom: 8px;
 }}
 
 section[data-testid="stSidebar"] > div {{
@@ -286,7 +295,7 @@ div[data-testid="stSelectbox"] [data-baseweb="select"] input {{
 }}
 
 .header {{
-    background:white;
+    background:#F9FAF9;
     border:1px solid {LINE};
     border-radius:16px;
     padding:1.25rem 1.35rem;
@@ -358,7 +367,7 @@ div[data-testid="stSelectbox"] [data-baseweb="select"] input {{
 }}
 
 .card {{
-    background:white;
+    background:#F9FBFA;
     border:1px solid {LINE};
     border-radius:14px;
     padding:.85rem .9rem;
@@ -444,7 +453,7 @@ div[data-testid="stSelectbox"] [data-baseweb="select"] input {{
 }}
 
 .panel {{
-    background:white;
+    background:#F9FBFA;
     border:1px solid {LINE};
     border-radius:16px;
     padding:1rem;
