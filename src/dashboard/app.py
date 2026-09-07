@@ -10,6 +10,7 @@ import io
 import time
 import sys
 import os
+import re
 import importlib.util
 from PIL import Image
 
@@ -113,35 +114,7 @@ WHITE = "#FFFFFF"
 # SESSION STATE
 # ============================================================
 
-DEFAULTS = {
-    "mode": "Offline Analysis",
-    "module": "Dashboard",
-    "live_interface": 5,
-    "live_name": "Wi-Fi",
-    "live_started": None,
-    "live_packets": 0,
-    "live_bytes": 0,
-    "live_protocols": Counter(),
-    "live_per_second": defaultdict(int),
-    "live_rtts": [],
-    "live_pending_icmp": {},
-    "live_retrans": 0,
-    "live_dup_ack": 0,
-    "live_ooo": 0,
-    "live_rst": 0,
-    "live_dns_queries": 0,
-    "live_dns_responses": 0,
-    "live_dns_failed": 0,
-    "live_dns_success": 0,
-    "live_arp_req": 0,
-    "live_arp_reply": 0,
-    "live_last_packets": [],
-}
-
-for key, value in DEFAULTS.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
-
+# Initialized below with the preferred live capture interface.
 
 # ============================================================
 # CSS
@@ -670,9 +643,13 @@ def get_interfaces():
                 continue
 
             number, name = line.split(". ", 1)
+            clean_name = name.strip()
+
+            if " (" in clean_name and clean_name.endswith(")"):
+                clean_name = clean_name.rsplit("(", 1)[1][:-1].strip()
 
             try:
-                interfaces.append((int(number), name.strip()))
+                interfaces.append((int(number), clean_name))
             except ValueError:
                 continue
 
@@ -680,6 +657,62 @@ def get_interfaces():
 
     except Exception:
         return [(5, "Wi-Fi")]
+
+
+def preferred_interface():
+    interfaces = get_interfaces()
+    if not interfaces:
+        return (5, "Wi-Fi")
+
+    preferred_order = (
+        "Wi-Fi",
+        "Wireless",
+        "Ethernet",
+        "Local Area Connection",
+    )
+
+    for token in preferred_order:
+        for number, name in interfaces:
+            if token.lower() in name.lower():
+                return (number, name)
+
+    for number, name in interfaces:
+        if "loopback" not in name.lower() and "etw" not in name.lower():
+            return (number, name)
+
+    return interfaces[0]
+
+
+PREFERRED_INTERFACE = preferred_interface()
+
+DEFAULTS = {
+    "mode": "Offline Analysis",
+    "module": "Dashboard",
+    "live_interface": PREFERRED_INTERFACE[0],
+    "live_name": PREFERRED_INTERFACE[1],
+    "live_started": None,
+    "live_packets": 0,
+    "live_bytes": 0,
+    "live_protocols": Counter(),
+    "live_per_second": defaultdict(int),
+    "live_rtts": [],
+    "live_pending_icmp": {},
+    "live_retrans": 0,
+    "live_dup_ack": 0,
+    "live_ooo": 0,
+    "live_rst": 0,
+    "live_dns_queries": 0,
+    "live_dns_responses": 0,
+    "live_dns_failed": 0,
+    "live_dns_success": 0,
+    "live_arp_req": 0,
+    "live_arp_reply": 0,
+    "live_last_packets": [],
+}
+
+for key, value in DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 
 def get_live_monitor():
@@ -737,13 +770,11 @@ with st.sidebar:
 
     if mode != st.session_state.mode:
         st.session_state.mode = mode
-
         reset_live_state()
 
         if mode == "Live Monitoring":
             get_live_monitor()
 
-        st.rerun()
 
     st.markdown(
         '<div class="side-label">Modules</div>',
@@ -823,6 +854,9 @@ with st.sidebar:
             st.session_state.live_interface = new_interface
             st.session_state.live_name = new_name
             reset_live_state()
+
+            if st.session_state.mode == "Live Monitoring":
+                get_live_monitor()
 
     st.markdown(
         '<div class="side-label">Analysis Engine</div>',
@@ -946,7 +980,9 @@ if st.session_state.mode == "Live Monitoring":
 
         @st.fragment(run_every="1s")
         def refresh_live_monitor():
-            st.rerun()
+            # We only need to refresh the current live snapshot; avoid a full
+            # page rerun from inside the fragment so mode switches stay fast.
+            live_snapshot()
 
         refresh_live_monitor()
 
@@ -2281,7 +2317,7 @@ elif st.session_state.module == "Network Topology":
             topology_image_data = Image.open(image_file).convert("RGB")
             st.image(
                 topology_image_data,
-                use_column_width=True,
+                use_container_width=True,
                 caption="Cisco Packet Tracer enterprise topology",
             )
     else:
